@@ -53,21 +53,20 @@ column_geneName <- function(results,p) {
 ########### DESeq2 analysis #########
 
 #chargement de la table de comptage (dans wd)
-countdata <- read.table("raw_count_table.tsv", sep = "\t", header = T, row.names = 1, check.names=F)
-countdata  <- countdata[1:(nrow(countdata) - 5), ] #remove the last 5 lines because not relevant (unmapped counts...)
+countdata <- read.table("count_NHLF_CM.txt", sep = "\t", header = T, row.names = 1, check.names=F)
+#countdata  <- countdata[1:(nrow(countdata) - 5), ] #remove the last 5 lines because not relevant (unmapped counts...)
 
 #metadatas:
-coldata <- read.csv(file = "Metadata_ASF.csv", header = T, sep =";")
+coldata <- read.csv(file = "Metadata_NGS24-043.csv", header = T, sep =";")
 str(coldata)
-coldata$patient <- factor(coldata$patient) #cree les différents niveaux pour patient (1,2,3,4)
-coldata$time <- factor(coldata$time) #cree les différents niveaux pour patient (0,14)
-coldata$treatment <- factor(coldata$treatment) #cree les différents niveaux pour treatment (cont or diff)
+coldata$CM <- factor(coldata$CM) #cree les différents niveaux pour les différents CM
+coldata$treatment <- factor(coldata$treatment) #cree les différents niveaux pour treatment (cont or stim)
 str(coldata)
 
 #Paired analysis on patient and time 
 ddsFullCountTable <- DESeqDataSetFromMatrix(countData = countdata, 
                                             colData = coldata, 
-                                            design = ~ patient + time)
+                                            design = ~ CM + treatment)
 keep <- rowSums(counts(ddsFullCountTable)) > 0 # added 8/03 ->  genes with counts
 ddsFullCountTable <- ddsFullCountTable[keep,] # added 8/03 -> to remove genes with no counts
 
@@ -156,11 +155,7 @@ write.table(Data_Norm_DEG,"./results/DESeq_Table_norm_count_DEG.tsv",sep='\t', r
 ###################" graph generation ###################################
 
 #MA-plots 
-plotMA(results_table, ylim=c(-6,6), alpha = 0.1)
-
-#MA-plots après data Shrinkage sur "time"
-resLFC <- lfcShrink(dds, coef="time_14_vs_0", type="apeglm")
-plotMA(resLFC, ylim=c(-6,6), alpha = 0.1)
+plotMA(results_table, ylim=c(-6,6), alpha = 0.05)
 
 
 #Volcano plot generation
@@ -168,7 +163,7 @@ plotMA(resLFC, ylim=c(-6,6), alpha = 0.1)
 # Extract the relevant information from Results
 results <- as.data.frame(results)
 results_df <- data.frame(
-  gene = results$gene_name,
+  gene = results$gene,
   log2FoldChange = results$log2FoldChange,
   neg_log10_pvalue = -log10(results$pvalue),
   padj = results$padj
@@ -178,7 +173,7 @@ results_df <- data.frame(
 ggplot(results_df, aes(x = log2FoldChange, y = neg_log10_pvalue)) +
   geom_point(aes(color = ifelse(neg_log10_pvalue > -log10(0.05) & abs(log2FoldChange) > 1, "Significant", "Non-significant")), show.legend =F) +
   scale_color_manual(values = c("Significant" = "cyan3", "Non-significant" = "grey")) +
-  xlim(c(-8, 12)) + ylim(c(0, 50)) +
+  xlim(c(-20, 20)) + ylim(c(0, 100)) +
   labs(x = "Log2 Fold Change", y = "-log10(p-value)",
        title = "Volcano Plot of Differentially Expressed Genes") +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
@@ -205,7 +200,7 @@ pheatmap(Data_Norm_Diff,
 
 # Step 1: Prepare ans transpose the data 
 data_for_pca2 <- t(Data_Norm) #transpose le tableau de données
-row.names(data_for_pca2) <- c("ASF859_D0","ASF859_D14","ASF876_D0","ASF876_D14","ASF879-2_D0","ASF879-2_D14","ASF880_D0","ASF880_D14")
+#row.names(data_for_pca2) <- c("ASF859_D0","ASF859_D14","ASF876_D0","ASF876_D14","ASF879-2_D0","ASF879-2_D14","ASF880_D0","ASF880_D14")
 
 
 # Step 2: Perform PCA
@@ -217,8 +212,8 @@ pc_df$Sample <- rownames(pc_df)                     # Add a "Sample" column for 
 
 # Step 4: Create the ggplot visualization with colors
 ggplot(pc_df, aes(x = Dim.1, y = Dim.2, label = Sample)) +
-  geom_point(aes(color = grepl("D0", Sample)), size = 3, shape = 16) +  # Grey dots for columns with "D0"
-  geom_point(aes(color = grepl("D14", Sample)), size = 3, shape = 16) + # Black dots for columns with "D14"
+  geom_point(aes(color = grepl("MC", Sample)), size = 3, shape = 16) +  # Grey dots for columns with "D0"
+  geom_point(aes(color = grepl("ctrl", Sample)), size = 3, shape = 16) + # Black dots for columns with "D14"
   geom_text(aes(y = Dim.2), 
             position = position_nudge(y = 10), # Adjust the labels to be above the points
             #vjust = -0.1, # Center the labels vertically
@@ -227,37 +222,6 @@ ggplot(pc_df, aes(x = Dim.1, y = Dim.2, label = Sample)) +
   labs(x = "PC1 (Principal Component 1)", y = "PC2 (Principal Component 2)") +
   ggtitle("PCA Analysis - First Two Principal Components") +
   theme_minimal() +
-  scale_color_manual(name = "Day", values = c("grey", "black"), labels = c("day0", "day14")) +  # Custom color scale with legend labels
-  coord_cartesian(xlim = c(-150, 200)) 
-
-###### PCA analysis using DEG genes #######
-
-
-# Step 1: Prepare ans transpose the data 
-pca2 <- t(Data_Norm_DEG) #transpose le tableau de données
-pca2 <- pca2[2:9,]
-row.names(pca2) <- c("ASF859_D0","ASF859_D14","ASF876_D0","ASF876_D14","ASF879-2_D0","ASF879-2_D14","ASF880_D0","ASF880_D14")
-pca2 <- apply(pca2, c(1, 2), as.numeric) #convertit toutes les valeurs en numeric selon les dimension en c()
-
-# Step 2: Perform PCA
-pca_result <- PCA(pca2, graph = FALSE)
-
-# Step 3: Extract PCA results for plotting
-pc_df <- as.data.frame(pca_result$ind$coord[, 1:2]) # Extract the first two principal components
-pc_df$Sample <- rownames(pc_df)                     # Add a "Sample" column for labels
-
-# Step 4: Create the ggplot visualization with colors
-ggplot(pc_df, aes(x = Dim.1, y = Dim.2, label = Sample)) +
-  geom_point(aes(color = grepl("D0", Sample)), size = 3, shape = 16) +  # Grey dots for columns with "D0"
-  geom_point(aes(color = grepl("D14", Sample)), size = 3, shape = 16) + # Black dots for columns with "D14"
-  geom_text(aes(y = Dim.2), 
-            position = position_nudge(y = 10), # Adjust the labels to be above the points
-            #vjust = -0.1, # Center the labels vertically
-            #hjust = -0.6,
-            size = 2, angle = -45) +  # Add labels for each point with adjusted size and 45° angle
-  labs(x = "PC1 (Principal Component 1)", y = "PC2 (Principal Component 2)") +
-  ggtitle("PCA Analysis - First Two Principal Components") +
-  theme_minimal() +
-  scale_color_manual(name = "Day", values = c("grey", "black"), labels = c("day0", "day14")) +  # Custom color scale with legend labels
-  coord_cartesian(xlim = c(-50, 50)) 
+  scale_color_manual(name = "Treatment", values = c("grey", "black"), labels = c("ctrl", "stim")) +  # Custom color scale with legend labels
+  coord_cartesian(xlim = c(-150, 150))
 
