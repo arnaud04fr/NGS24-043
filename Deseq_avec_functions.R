@@ -36,6 +36,9 @@ get_geneID <- function(results) {
       geneID[i, 3] <- geneID[i, 1]
     }
   }
+  #change the name of the columns to ease table union
+  colnames(geneID)[2] <- "gene"
+  colnames(geneID)[3] <- "gene_name"
   
   return(geneID)
 }
@@ -54,9 +57,8 @@ column_geneName <- function(results,p) {
 
 #chargement de la table de comptage (dans wd)
 countdata <- read.table("count_NHLF_CM.txt", sep = "\t", header = T, row.names = 1, check.names=F)
-#countdata  <- countdata[1:(nrow(countdata) - 5), ] #remove the last 5 lines because not relevant (unmapped counts...)
 
-#metadatas:
+#metadata:
 coldata <- read.csv(file = "Metadata_NGS24-043.csv", header = T, sep =";")
 str(coldata)
 coldata$CM <- factor(coldata$CM) #cree les différents niveaux pour les différents CM
@@ -64,14 +66,15 @@ coldata$treatment <- factor(coldata$treatment) #cree les différents niveaux pou
 str(coldata)
 
 #Paired analysis on patient and time 
-ddsFullCountTable <- DESeqDataSetFromMatrix(countData = countdata, 
+dds <- DESeqDataSetFromMatrix(countData = countdata, 
                                             colData = coldata, 
                                             design = ~ CM + treatment)
-keep <- rowSums(counts(ddsFullCountTable)) > 0 # added 8/03 ->  genes with counts
-ddsFullCountTable <- ddsFullCountTable[keep,] # added 8/03 -> to remove genes with no counts
+keep <- rowSums(counts(dds)) > 0 # added 8/03 ->  genes with counts
+dds <- dds[keep,] # added 8/03 -> to remove genes with no counts
+dds$treatment <- relevel(dds$treatment, "cont") # added 03/21 -> confirm control conditions
 
 # Run the DESeq analysis and obtain the results table
-dds <- DESeq(ddsFullCountTable)
+dds <- DESeq(dds)
 results_table <- results(dds)
 
 # Extract the results for all genes
@@ -88,10 +91,9 @@ results <- data.frame(
 )
 
 ##### rajout des noms officiels ########
-
 geneID <- get_geneID(results)
-results <- cbind(results,geneID[,3]) #fusionner les tables:
-colnames(results)[5] <- "gene_name"
+results <- inner_join(results,geneID, by = "gene")
+results <- results[,-5] # remove the ensembl_gene_id
 results <- as.data.frame(results)
 results <- results %>% relocate(gene_name, .before = 2) #changer l'ordre des colonnes
 head(results)
@@ -125,38 +127,25 @@ Down_expressed_genes <- subset(result_diff, log2FoldChange <= -1)
 UP_expressed_genes <- subset(result_diff, log2FoldChange >= 1)
 nr <- nrow(result_diff)
 print(paste("Total DEG" , nrow(result_diff), "/ UP ", nrow(UP_expressed_genes), " / DOWN ", nrow(Down_expressed_genes)))
-
 write.table(result_diff,"./results/DESeq-table_gene_rank_DEG.tsv",sep='\t', row.names = T, col.names=T)
 
 
 ############ extraction tables comptages normalisées ###########
 ddsNorm <- estimateSizeFactors(dds)
 Data_Norm <- (counts(ddsNorm, normalized=TRUE))
-
-#table with all genes
 Data_Norm_all <- as.data.frame(Data_Norm)
-Data_Norm_all <- column_geneName(Data_Norm_all,p=1) #p indique la position initale de la colonne pour insérer geneName
-head(Data_Norm_all)
-geneID <- get_geneID(Data_Norm_all) #rajout nom officiel
-Data_Norm_all[,1] <- geneID[,3]
 head(Data_Norm_all)
 write.table(Data_Norm_all,"./results/DESeq_Table_norm_count_all.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
 
 # table will only DEG:
-Data_Norm_Diff <- as.data.frame(Data_Norm[result_diff[,1], ])
-Data_Norm_DEG <- column_geneName(Data_Norm_Diff, p=1) #p indique la position initale de la colonne pour insérer geneName
-head(Data_Norm_DEG)
-geneID <- get_geneID(Data_Norm_DEG) #rajout nom officiel
-Data_Norm_DEG[,1] <- geneID[,3]
-head(Data_Norm_DEG)
+Data_Norm_DEG <- as.data.frame(Data_Norm[result_diff[,1], ])
 write.table(Data_Norm_DEG,"./results/DESeq_Table_norm_count_DEG.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
 
 
 ###################" graph generation ###################################
 
 #MA-plots 
-plotMA(results_table, ylim=c(-6,6), alpha = 0.05)
-
+plotMA(results_table, ylim=c(-6,6), alpha = 0.1)
 
 #Volcano plot generation
 
@@ -212,8 +201,8 @@ pc_df$Sample <- rownames(pc_df)                     # Add a "Sample" column for 
 
 # Step 4: Create the ggplot visualization with colors
 ggplot(pc_df, aes(x = Dim.1, y = Dim.2, label = Sample)) +
-  geom_point(aes(color = grepl("MC", Sample)), size = 3, shape = 16) +  # Grey dots for columns with "D0"
-  geom_point(aes(color = grepl("ctrl", Sample)), size = 3, shape = 16) + # Black dots for columns with "D14"
+  geom_point(aes(color = grepl("MC", Sample)), size = 2, shape = 16) +  # Grey dots for columns with "D0"
+  geom_point(aes(color = grepl("ctrl", Sample)), size = 2, shape = 16) + # Black dots for columns with "D14"
   geom_text(aes(y = Dim.2), 
             position = position_nudge(y = 10), # Adjust the labels to be above the points
             #vjust = -0.1, # Center the labels vertically
@@ -224,4 +213,46 @@ ggplot(pc_df, aes(x = Dim.1, y = Dim.2, label = Sample)) +
   theme_minimal() +
   scale_color_manual(name = "Treatment", values = c("grey", "black"), labels = c("ctrl", "stim")) +  # Custom color scale with legend labels
   coord_cartesian(xlim = c(-150, 150))
+
+########### PCA version 2 #########
+
+#load data for PCA using normalized data dss
+#df <- read.table("./results/DESeq_Table_norm_count_all.tsv", sep = "\t", header = T, row.names = 1, check.names=F)
+df <- as.data.frame(t(Data_Norm_all))
+
+# Assuming df.pca is the output of prcomp
+df.pca <- prcomp(df,scale = TRUE)
+percentage_variance <- (df.pca$sdev^2 / sum(df.pca$sdev^2)) * 100
+
+## Create a data frame with PC and Percentage Variance
+variance_table <- data.frame(
+  PC = paste0("PC", 1:length(df.pca$sdev)),
+  Percentage_Variance = paste0(round(percentage_variance, 2), "%")
+)
+
+PC1 <- df.pca$x[,1]
+PC2 <- df.pca$x[,2]
+
+# Define custom colors for treatment + metadata
+treatment <- rep(c("stim","cont"),5)
+treatment_color <- c("cont" = "#619CFF", "stim" = "#F8766D")
+
+ggplot(df, 
+       aes(x = PC1, 
+           y = PC2, 
+           color = treatment, 
+           label = rownames(df))) +
+  geom_point(size = 3, shape = 16) +
+  geom_text(vjust = -2, size = 3, angle = -20) +
+  stat_ellipse(type = "t", level = 0.9, segments = 51, linetype = "dashed") +
+  labs(title = "PCA Analysis",
+       x = paste0("PC1 (", variance_table$Percentage_Variance[1], ")"),
+       y = paste0("PC2 (", variance_table$Percentage_Variance[2], ")")) +
+  ggtitle("PCA Analysis - First Two Principal Components") +
+  coord_cartesian(xlim = c(-250, 250)) +
+  theme_minimal() +
+  scale_color_manual(values = treatment_color)
+
+
+
 
