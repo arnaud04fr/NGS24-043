@@ -43,16 +43,6 @@ get_geneID <- function(results) {
   return(geneID)
 }
 
-#cette fonction pour insérer en premier une colonne avec les transcript IDs avant GeneID
-column_geneName <- function(results,p) {
-  geneName <- NULL  
-  library(dplyr)
-    geneName <- row.names(results) #extraction de la liste des gènes
-    results <- as.data.frame(cbind(results,geneName))
-    results <- results %>% relocate(geneName, .before = p)
-    return(results)
-}
-
 ########### DESeq2 analysis #########
 
 #chargement de la table de comptage (dans wd)
@@ -94,11 +84,11 @@ rownames(results) <- rownames(results_table)
 geneID <- get_geneID(results)
 results$gene <- row.names(results)
 results <- inner_join(results,geneID, by = "gene")
-row.names(results) <- results$ensembl_gene_id
+row.names(results) <- results$gene
 results <- results[,-c(4:5)] # remove the ensembl_gene_id
 results <- as.data.frame(results)
 results <- results %>% relocate(gene_name, .before = 1) #changer l'ordre des colonnes
-results <- results[!duplicated(results$gene_name), ]
+#results <- results[!duplicated(results$gene_name), ]
 head(results)
 
 
@@ -120,6 +110,8 @@ table_GSEA <- table_GSEA %>% drop_na() #remove lines with NA value
 head(table_GSEA)
 
 #ecriture des tables au format tsv dans le dossier results
+results$gene <- row.names(results)
+results <- results %>% relocate(gene, .before = 1)
 write.table(results,"./results/DESeq-table_gene_all.tsv",sep='\t', row.names = F, col.names=T, quote = F)
 write.table(table_GSEA,"./results/DESeq-gene_GSEAonly_all.tsv",sep='\t', row.names = F, col.names=T, quote = F)
 
@@ -146,10 +138,11 @@ Data_Norm_all <- Data_Norm_all[!duplicated(Data_Norm_all$gene_name), ]
 row.names(Data_Norm_all) <- Data_Norm_all$gene_name
 Data_Norm_all <- Data_Norm_all[,-c(11:13)] # remove the ensembl_gene_id
 colnames(Data_Norm_all) <- sub("_.*", "", colnames(Data_Norm_all))
+head(Data_Norm_all)
 write.table(Data_Norm_all,"./results/DESeq_Table_norm_count_all.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
 
 # table will only DEG:
-Data_Norm_DEG <- as.data.frame(Data_Norm_all[result_diff[,1], ])
+Data_Norm_DEG <- as.data.frame(Data_Norm_all[result_diff$gene_name, ])
 write.table(Data_Norm_DEG,"./results/DESeq_Table_norm_count_DEG.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
 
 
@@ -163,7 +156,7 @@ plotMA(results_table, ylim=c(-6,6), alpha = 0.1)
 # Extract the relevant information from Results
 results <- as.data.frame(results)
 results_df <- data.frame(
-  gene = results$gene,
+  gene = results$gene_name,
   log2FoldChange = results$log2FoldChange,
   neg_log10_pvalue = -log10(results$pvalue),
   padj = results$padj
@@ -173,7 +166,7 @@ results_df <- data.frame(
 ggplot(results_df, aes(x = log2FoldChange, y = neg_log10_pvalue)) +
   geom_point(aes(color = ifelse(neg_log10_pvalue > -log10(0.05) & abs(log2FoldChange) > 1, "Significant", "Non-significant")), show.legend =F) +
   scale_color_manual(values = c("Significant" = "cyan3", "Non-significant" = "grey")) +
-  xlim(c(-10, 15)) + ylim(c(0, 100)) +
+  xlim(c(-10, 15)) + ylim(c(0, 150)) +
   labs(x = "Log2 Fold Change", y = "-log10(p-value)",
        title = "Volcano Plot of Differentially Expressed Genes") +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
@@ -182,7 +175,10 @@ ggplot(results_df, aes(x = log2FoldChange, y = neg_log10_pvalue)) +
   geom_text(aes(label = ifelse(neg_log10_pvalue > 10 & abs(log2FoldChange) > 3, gene, "")), 
             vjust = -0.9, hjust = 0.5, size = 2, angle = 20) +
     geom_text(aes(label = ifelse(neg_log10_pvalue > 40 & log2FoldChange < 2, gene, "")), 
-            vjust = -0.9, hjust = 0.5, size = 2, angle = 20) 
+            vjust = -0.9, hjust = 0.5, size = 2, angle = 20) +
+  geom_text(aes(label = ifelse(neg_log10_pvalue > 40 & log2FoldChange > 1, gene, "")), 
+            vjust = -0.9, hjust = 0.5, size = 2, angle = 20)
+
   
 #Clustering and heatmap
 
@@ -266,6 +262,241 @@ ggplot(df,
   coord_cartesian(xlim = c(-210, 210)) +
   theme_minimal() +
   scale_color_manual(values = treatment_color)
+
+
+
+######################## Pathway analysis ##################
+
+library(pathview)
+library(GO.db)
+library(enrichplot)
+
+
+# SET THE DESIRED ORGANISM HERE
+organism = "org.Hs.eg.db"
+library(organism, character.only = TRUE)
+
+#reading data
+df <- read.table("./results/DESeq-table_gene_all.tsv", header = T, sep = "\t", quote = "")
+
+##### rajout des noms officiels ########
+
+#creation de la liste:
+list_names <- df$gene
+
+# Définissez la base de données Ensembl et créez un objet biomart
+ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+
+# Précisez les attributs que vous souhaitez récupérer
+attributes <- c("ensembl_gene_id", "ensembl_gene_id_version")
+
+# Récupérez les informations à partir de Biomart
+gene_info <- getBM(attributes = attributes, filters = "ensembl_gene_id_version", values = list_names, mart = ensembl)
+
+
+#fusionner les tables avec Tidyverse:
+df <- inner_join(df, gene_info, by = c("gene" = "ensembl_gene_id_version"))
+
+
+######################################################
+############### GO ANALYSIS ##########################
+#####################################################
+
+# we want the log2FoldChange score
+original_gene_list <- df$log2FoldChange
+
+# name the vector
+names(original_gene_list) <- df$ensembl_gene_id
+head(original_gene_list)
+
+# omit any NA values 
+gene_list<-na.omit(original_gene_list)
+
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+# Exctract significant results (padj < 0.05)
+sig_genes_df = subset(df, padj < 0.05)
+
+# From significant results, we want to filter on log2fold change
+genes <- sig_genes_df$log2FoldChange
+
+# Name the vector
+names(genes) <- sig_genes_df$ensembl_gene_id
+
+# omit NA values
+genes <- na.omit(genes)
+
+# filter on min log2fold change (log2FoldChange > 2)
+genes <- names(genes)[abs(genes) > 2]
+
+onto  <- c("MF", "BP", "CC") 
+n <- length(onto)
+go_enrich_list <- NULL 
+
+
+for (i in 1:n) {
+  print(onto[i])
+  go_enrich <- enrichGO(gene = genes,
+                        universe = names(gene_list),
+                        OrgDb = org.Hs.eg.db::org.Hs.eg.db, 
+                        keyType = 'ENSEMBL',
+                        readable = T,
+                        ont = onto[i],
+                        pvalueCutoff = 0.05, 
+                        qvalueCutoff = 0.10)
+  #graph generation
+  titre <- c(paste("GO",onto[i]))
+ print(upsetplot(go_enrich),
+       title = titre )
+ 
+ print(barplot(go_enrich, 
+          drop = TRUE, 
+          showCategory = 10, 
+          title = titre,
+          font.size = 8))
+ 
+  print(dotplot(go_enrich),
+        title = titre)
+  
+  # Assign the enrichGO result to the list with a dynamic name
+  go_enrich_list[[paste("go_enrich_", onto[i], sep = "")]] <- go_enrich
+  
+ }
+
+
+######################################################
+############### GSEA ANALYSIS #######################
+#####################################################
+
+# we want the GSEA score rank from df
+original_gene_list2 <- df$score_GSEA
+
+# name the vector
+names(original_gene_list2) <- df$ensembl_gene_id
+
+# omit any NA values 
+gene_list<-na.omit(original_gene_list2)
+
+# sort the list in decreasing order (required for clusterProfiler)
+gene_list = sort(gene_list, decreasing = TRUE)
+
+gse <- gseGO(geneList=gene_list, 
+             ont ="ALL", 
+             keyType = "ENSEMBL", 
+             nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = org.Hs.eg.db::org.Hs.eg.db, 
+             pAdjustMethod = "none")
+
+
+#Dotplot
+require(DOSE)
+dotplot(gse, showCategory=10, split=".sign") + facet_grid(.~.sign)
+
+ridgeplot(gse) + labs(x = "enrichment distribution")
+
+# categorySize can be either 'pvalue' or 'geneNum'
+cnetplot(gse, categorySize="pvalue", foldChange=gene_list, showCategory = 3)
+
+
+
+
+
+####################################################
+############ KEGG Pathway Enrichment    ############
+####################################################
+
+
+# Convert gene IDs for enrichKEGG function
+ids<-bitr(names(original_gene_list), fromType = "ENSEMBL", toType = "ENTREZID", OrgDb="org.Hs.eg.db") # remove duplicate IDS (here I use "ENSEMBL", but it should be whatever was selected as keyType)
+dedup_ids = ids[!duplicated(ids[c("ENSEMBL")]),]
+
+# Create a new dataframe df2 which has only the genes which were successfully mapped using the bitr function above
+df2 <- inner_join(df, dedup_ids, by = c("ensembl_gene_id" = "ENSEMBL"))
+
+# Create a vector of the gene unuiverse
+kegg_gene_list <- df2$log2FoldChange
+
+# Name vector with ENTREZ ids
+names(kegg_gene_list) <- df2$ENTREZID
+
+# omit any NA values 
+kegg_gene_list<-na.omit(kegg_gene_list)
+
+# sort the list in decreasing order (required for clusterProfiler)
+kegg_gene_list = sort(kegg_gene_list, decreasing = TRUE)
+
+# Exctract significant results from df2
+kegg_sig_genes_df = subset(df2, padj < 0.05)
+
+# From significant results, we want to filter on log2fold change
+kegg_genes <- kegg_sig_genes_df$log2FoldChange
+
+# Name the vector with the CONVERTED ID!
+names(kegg_genes) <- kegg_sig_genes_df$ENTREZID
+
+# omit NA values
+kegg_genes <- na.omit(kegg_genes)
+head(kegg_genes)
+
+# filter on log2fold change (PARAMETER)
+kegg_genes <- (kegg_genes)[abs(kegg_genes) > 2]
+head(kegg_genes)
+
+##### Create enrichKEGG object
+kegg_organism = "hsa"
+kk <- enrichKEGG(gene=names(kegg_genes), universe=names(kegg_gene_list),organism=kegg_organism, pvalueCutoff = 0.05, keyType = "ncbi-geneid")
+
+# omit any NA values 
+gene_list<-na.omit(original_gene_list)
+
+barplot(kk, 
+        showCategory = 40, 
+        title = "Enriched Pathways",
+        font.size = 8)
+
+dotplot(kk, 
+        showCategory = 40, 
+        title = "Enriched Pathways",
+        font.size = 8)
+
+####### UPSET PLOT
+upsetplot(kk)
+
+####### CNET PLOT
+
+# categorySize can be either 'pvalue' or 'geneNum'
+cnetplot(kk, categorySize="pvalue", foldChange=gene_list)
+
+####### PATHVIEW
+
+#change dme according to gseKEGG output table
+KEGGf <- as.data.frame(kk)
+ID <- KEGGf$ID
+n <- length(ID)
+
+#PNG
+for (i in 1:n) {
+  dme <- pathview(gene.data=kegg_genes, 
+                  pathway.id=ID[i], 
+                  species = kegg_organism,
+                  kegg.native = TRUE,
+                  same.layer = F) 
+}
+
+#PDF
+for (i in 1:n) {
+  dme <- pathview(gene.data=kegg_genes, 
+                  pathway.id=ID[i], 
+                  species = kegg_organism,
+                  kegg.native = F,
+                  same.layer = T) 
+}
+
 
 
 
