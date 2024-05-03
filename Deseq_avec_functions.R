@@ -49,14 +49,14 @@ get_geneID <- function(results) {
 countdata <- read.table("count_NHLF_CM.txt", sep = "\t", header = T, row.names = 1, check.names=F)
 
 #remove CM from ASF894 -> to test.
-colnames(countdata) #ASF398 -> columns 5 and 6
-countdata <- countdata[,-(5:6)]
+#colnames(countdata) #ASF398 -> columns 5 and 6
+#countdata <- countdata[,-(5:6)]
 
 #metadata:
 coldata <- read.csv(file = "Metadata_NGS24-043.csv", header = T, sep =";")
 #remove metadata of ASF894.
-coldata[,1] #ASF398 -> rows 5 and 6
-coldata <- coldata[-(5:6),]
+#coldata[,1] #ASF398 -> rows 5 and 6
+#coldata <- coldata[-(5:6),]
 str(coldata)
 coldata$CM <- factor(coldata$CM) #cree les différents niveaux pour les différents CM
 coldata$treatment <- factor(coldata$treatment) #cree les différents niveaux pour treatment (cont or stim)
@@ -156,10 +156,46 @@ write.table(Data_Norm_DEG,"./results/DESeq_Table_norm_count_DEG.tsv",sep='\t', r
 
 ###################" graph generation ###################################
 
-#MA-plots 
-plotMA(results_table, ylim=c(-6,6), alpha = 0.1)
+## MA-plots ## 
+plotMA(results_table, ylim=c(-6,6), alpha = 0.05)
 
-#Volcano plot generation
+
+## Scatter plot ##
+
+norm_counts <- Data_Norm
+colnames(norm_counts) <- c("MC1","CT1","MC2",'CT2',"MC3",'CT3',"MC4",'CT4',"MC5",'CT5')
+norm_counts <- norm_counts[,order(colnames(norm_counts))]
+
+n <- length(rownames(norm_counts))
+counts_mean <- as.data.frame(matrix(0 ,nrow = n, ncol = 2 ))
+colnames(counts_mean) <- c("cont", "stim")
+row.names(counts_mean) <- row.names(norm_counts)
+
+for (i in 1:n) {
+  counts_mean[i,1] <- log10(mean(norm_counts[i,1:5]) +1)
+  counts_mean[i,2] <- log10(mean(norm_counts[i,6:10]) +1)
+}
+
+up_genes <- subset(results_table, padj < 0.05 & log2FoldChange > 1)
+down_genes <- subset(results_table, padj < 0.05 & log2FoldChange < 1)
+
+#Combine the up-regulated and down-regulated genes
+significant_genes <- rbind(up_genes, down_genes)
+
+# Add a new column to 'counts_mean' indicating the regulation status of each gene
+counts_mean$regulation <- ifelse(rownames(counts_mean) %in% rownames(up_genes), "Up",
+                                 ifelse(rownames(counts_mean) %in% rownames(down_genes), "Down", "NS"))
+
+#Create the scatter plot
+ggplot(counts_mean, aes(x = cont, y = stim, color = regulation)) +
+  geom_point() +
+  scale_color_manual(values = c("blue", "black", "red")) + # Set the colors for up, down, and not changed genes
+  xlab("Log10 Normalized Counts (Control)") +
+  ylab("Log10 Normalized Counts (Stim)") +
+  ggtitle("Scatter plot of Control vs Treated conditions")
+
+
+## Volcano plot generation ##
 
 # Extract the relevant information from Results
 results <- as.data.frame(results)
