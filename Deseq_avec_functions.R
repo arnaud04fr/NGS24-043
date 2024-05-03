@@ -120,8 +120,8 @@ head(table_GSEA)
 #ecriture des tables au format tsv dans le dossier results
 results$gene <- row.names(results)
 results <- results %>% relocate(gene, .before = 1)
-write.table(results,"./results/DESeq-table_gene_all.tsv",sep='\t', row.names = F, col.names=T, quote = F)
-write.table(table_GSEA,"./results/DESeq-gene_GSEAonly_all.tsv",sep='\t', row.names = F, col.names=T, quote = F)
+#write.table(results,"./results/DESeq-table_gene_all.tsv",sep='\t', row.names = F, col.names=T, quote = F)
+#write.table(table_GSEA,"./results/DESeq-gene_GSEAonly_all.tsv",sep='\t', row.names = F, col.names=T, quote = F)
 
 
 ###### selection des gènes avec LogFC >=2 et padj <= 0.05
@@ -130,7 +130,7 @@ Down_expressed_genes <- subset(result_diff, log2FoldChange <= -1)
 UP_expressed_genes <- subset(result_diff, log2FoldChange >= 1)
 nr <- nrow(result_diff)
 print(paste("Total DEG" , nrow(result_diff), "/ UP ", nrow(UP_expressed_genes), " / DOWN ", nrow(Down_expressed_genes)))
-write.table(result_diff,"./results/DESeq-table_gene_rank_DEG.tsv",sep='\t', row.names = T, col.names=T)
+#write.table(result_diff,"./results/DESeq-table_gene_rank_DEG.tsv",sep='\t', row.names = T, col.names=T)
 
 
 ############ extraction tables comptages normalisées ###########
@@ -142,16 +142,16 @@ rm(geneID)
 geneID <- get_geneID(Data_Norm_all) #rajout nom officiel
 Data_Norm_all$gene <- row.names(Data_Norm_all) 
 Data_Norm_all <- inner_join(Data_Norm_all,geneID, by = "gene")
-Data_Norm_all <- Data_Norm_all[!duplicated(Data_Norm_all$gene_name), ]
+Data_Norm_all <- Data_Norm_all[!duplicated(Data_Norm_all$gene_name), ] #remove duplicated symbols
 row.names(Data_Norm_all) <- Data_Norm_all$gene_name
-Data_Norm_all <- Data_Norm_all[,1:8] # remove the ensembl_gene_id -> check the number of columns before
+Data_Norm_all <- Data_Norm_all[,1:10] # remove the ensembl_gene_id -> check the number of columns before
 colnames(Data_Norm_all) <- sub("_.*", "", colnames(Data_Norm_all))
 head(Data_Norm_all)
-write.table(Data_Norm_all,"./results/DESeq_Table_norm_count_all.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
+#write.table(Data_Norm_all,"./results/DESeq_Table_norm_count_all.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
 
 # table will only DEG:
 Data_Norm_DEG <- as.data.frame(Data_Norm_all[result_diff$gene_name, ])
-write.table(Data_Norm_DEG,"./results/DESeq_Table_norm_count_DEG.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
+#write.table(Data_Norm_DEG,"./results/DESeq_Table_norm_count_DEG.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
 
 
 ###################" graph generation ###################################
@@ -162,9 +162,9 @@ plotMA(results_table, ylim=c(-6,6), alpha = 0.05)
 
 ## Scatter plot ##
 
-norm_counts <- Data_Norm
+norm_counts <- Data_Norm_all
 colnames(norm_counts) <- c("MC1","CT1","MC2",'CT2',"MC3",'CT3',"MC4",'CT4',"MC5",'CT5')
-norm_counts <- norm_counts[,order(colnames(norm_counts))]
+norm_counts <- as.data.frame(norm_counts[,order(colnames(norm_counts))])
 
 n <- length(rownames(norm_counts))
 counts_mean <- as.data.frame(matrix(0 ,nrow = n, ncol = 2 ))
@@ -172,19 +172,21 @@ colnames(counts_mean) <- c("cont", "stim")
 row.names(counts_mean) <- row.names(norm_counts)
 
 for (i in 1:n) {
-  counts_mean[i,1] <- log10(mean(norm_counts[i,1:5]) +1)
-  counts_mean[i,2] <- log10(mean(norm_counts[i,6:10]) +1)
+  counts_mean[i,1] <- log10(mean(as.numeric(norm_counts[i,1:5])) +1)
+  counts_mean[i,2] <- log10(mean(as.numeric(norm_counts[i,6:10])) +1)
 }
 
-up_genes <- subset(results_table, padj < 0.05 & log2FoldChange > 1)
-down_genes <- subset(results_table, padj < 0.05 & log2FoldChange < 1)
+up_genes <- subset(results, padj < 0.05 & log2FoldChange > 1)
+up_genes <- up_genes[!duplicated(up_genes$gene_name), ] #remove duplicated symbols
+down_genes <- subset(results, padj < 0.05 & log2FoldChange < -1)
+down_genes <- down_genes[!duplicated(up_genes$gene_name), ] #remove duplicated symbols
 
 #Combine the up-regulated and down-regulated genes
-significant_genes <- rbind(up_genes, down_genes)
+significant_genes <- (rbind(up_genes, down_genes))
 
 # Add a new column to 'counts_mean' indicating the regulation status of each gene
-counts_mean$regulation <- ifelse(rownames(counts_mean) %in% rownames(up_genes), "Up",
-                                 ifelse(rownames(counts_mean) %in% rownames(down_genes), "Down", "NS"))
+counts_mean$regulation <- ifelse(rownames(counts_mean) %in% up_genes$gene_name, "Up",
+                                 ifelse(rownames(counts_mean) %in% down_genes$gene_name, "Down", "NS"))
 
 #Create the scatter plot
 ggplot(counts_mean, aes(x = cont, y = stim, color = regulation)) +
