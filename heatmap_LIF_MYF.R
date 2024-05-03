@@ -21,44 +21,14 @@ Data_Norm_LIF_all <- subset(Data_Norm_DEG, row.names(Data_Norm_DEG) %in% LIF$gen
 Data_Norm_MYF_all <- subset(Data_Norm_DEG, row.names(Data_Norm_DEG) %in% MYF$gene_name)
 Data_Norm_sign_all <- subset(Data_Norm_DEG_all, row.names(Data_Norm_DEG_all) %in% LIF_MYF$gene_name)
 
+# Get the order of row names in LIF_MYF table
+order <- match(LIF_MYF$gene_name, rownames(Data_Norm_sign_all))
+
+# Reorder row names of Data_Norm_sign_all ans remove NA rows
+table1_reordered <- Data_Norm_sign_all[order, , drop = FALSE]
+table1_reordered <- na.omit(table1_reordered)
 
 #Clustering and heatmap
-
-pheatmap(Data_Norm_LIF ,
-         #kmeans_k = 4,
-         clustering_distance_rows = "correlation",
-         cluster_rows = TRUE,  # Cluster rows
-         cluster_cols = TRUE,  # Cluster columns,
-         scale = "row",        # Scale rows (you can change this if needed)
-         main = "Heatmap of Differentially Expressed Genes",
-         fontsize = 8,         # Adjust the font size for row and column names
-         show_rownames = TRUE, # Show row names
-         show_colnames = TRUE  # Show column names
-)
-
-pheatmap(Data_Norm_MYF ,
-         #kmeans_k = 4,
-         clustering_distance_rows = "correlation",
-         cluster_rows = TRUE,  # Cluster rows
-         cluster_cols = TRUE,  # Cluster columns,
-         scale = "row",        # Scale rows (you can change this if needed)
-         main = "Heatmap of Differentially Expressed Genes",
-         fontsize = 8,         # Adjust the font size for row and column names
-         show_rownames = TRUE, # Show row names
-         show_colnames = TRUE  # Show column names
-)
-
-pheatmap(Data_Norm_sign_all ,
-         #kmeans_k = 4,
-         clustering_distance_rows = "correlation",
-         cluster_rows = TRUE,  # Cluster rows
-         cluster_cols = TRUE,  # Cluster columns,
-         scale = "row",        # Scale rows (you can change this if needed)
-         main = "Heatmap of Differentially Expressed Genes",
-         fontsize = 8,         # Adjust the font size for row and column names
-         show_rownames = TRUE, # Show row names
-         show_colnames = TRUE  # Show column names
-)
 
 #annotations des colonnes pour graph par traitement
 my_sample_col <- data.frame(metadata$treatment)
@@ -80,25 +50,47 @@ method <- c("euclidean", "maximum", "manhattan", "canberra", "binary","minkowski
 n <- length(method)
 
 
+pheatmap(table1_reordered,
+         #kmeans_k = 4,
+         annotation_col = my_sample_col,
+         annotation_row = my_sample_row,
+         annotation_colors = my_colour,
+         #clustering_distance_rows = method[i],
+         #clustering_distance_cols = "correlation",
+         cluster_rows = FALSE,  # Cluster rows
+         cluster_cols = TRUE,  # Cluster columns,
+         cutree_rows = 4,
+         cutree_cols =2,
+         treeheight_col = 20,
+         treeheight_row = 0, # hauteur de l'arbre pour ligne
+         scale = "row",        # Scale rows (-> Z-score)
+         main = "Heatmap of Differentially Expressed Genes",
+         fontsize = 8,         # Adjust the font size for row and column names
+         show_rownames = TRUE, # Show row names
+         show_colnames = TRUE,  # Show column names
+)
+
+
 for (i in 1:n) {
    pheatmap(Data_Norm_sign_all,
            #kmeans_k = 4,
            annotation_col = my_sample_col,
            annotation_row = my_sample_row,
            annotation_colors = my_colour,
-           clustering_distance_rows = method[i],
+           #clustering_distance_rows = method[i],
            #clustering_distance_cols = "correlation",
-           cluster_rows = TRUE,  # Cluster rows
-           cluster_cols = TRUE,  # Cluster columns,
-           cutree_rows = 2,
+           cluster_rows = FALSE,  # Cluster rows
+           cluster_cols = ,  # Cluster columns,
+           cutree_rows = 4,
            cutree_cols =2,
-           scale = "row",        # Scale rows (you can change this if needed)
+           treeheight_col = 20,
+           treeheight_row = 0, # hauteur de l'arbre pour ligne
+           scale = "row",        # Scale rows (-> Z-score)
            main = paste("Heatmap of Differentially Expressed Genes - ",method[i]),
            fontsize = 8,         # Adjust the font size for row and column names
            show_rownames = TRUE, # Show row names
            show_colnames = TRUE,  # Show column names
-           #color = my_palette,
-  )
+            )
 
 }
 
