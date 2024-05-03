@@ -48,8 +48,15 @@ get_geneID <- function(results) {
 #chargement de la table de comptage (dans wd)
 countdata <- read.table("count_NHLF_CM.txt", sep = "\t", header = T, row.names = 1, check.names=F)
 
+#remove CM from ASF894 -> to test.
+colnames(countdata) #ASF398 -> columns 5 and 6
+countdata <- countdata[,-(5:6)]
+
 #metadata:
 coldata <- read.csv(file = "Metadata_NGS24-043.csv", header = T, sep =";")
+#remove metadata of ASF894.
+coldata[,1] #ASF398 -> rows 5 and 6
+coldata <- coldata[-(5:6),]
 str(coldata)
 coldata$CM <- factor(coldata$CM) #cree les différents niveaux pour les différents CM
 coldata$treatment <- factor(coldata$treatment) #cree les différents niveaux pour treatment (cont or stim)
@@ -61,7 +68,7 @@ dds <- DESeqDataSetFromMatrix(countData = countdata,
                                             design = ~ CM + treatment)
 keep <- rowSums(counts(dds)) > 0 # added 8/03 ->  genes with counts
 dds <- dds[keep,] # added 8/03 -> to remove genes with no counts
-dds$treatment <- relevel(dds$treatment, "cont") # added 03/21 -> confirm control conditions
+dds$treatment <- relevel(dds$treatment, "cont") # added 03/21 -> define clearly the control condition
 
 # Run the DESeq analysis and obtain the results table
 dds <- DESeq(dds)
@@ -107,6 +114,7 @@ table_GSEA[,1] <- results[,1]
 table_GSEA[,2] <- as.numeric(results[,5])
 colnames(table_GSEA) <- c("Gene_name","Rank")
 table_GSEA <- table_GSEA %>% drop_na() #remove lines with NA value
+table_GSEA  <- arrange(table_GSEA, desc(Rank)) #order genes by rank
 head(table_GSEA)
 
 #ecriture des tables au format tsv dans le dossier results
@@ -136,7 +144,7 @@ Data_Norm_all$gene <- row.names(Data_Norm_all)
 Data_Norm_all <- inner_join(Data_Norm_all,geneID, by = "gene")
 Data_Norm_all <- Data_Norm_all[!duplicated(Data_Norm_all$gene_name), ]
 row.names(Data_Norm_all) <- Data_Norm_all$gene_name
-Data_Norm_all <- Data_Norm_all[,-c(11:13)] # remove the ensembl_gene_id
+Data_Norm_all <- Data_Norm_all[,1:8] # remove the ensembl_gene_id -> check the number of columns before
 colnames(Data_Norm_all) <- sub("_.*", "", colnames(Data_Norm_all))
 head(Data_Norm_all)
 write.table(Data_Norm_all,"./results/DESeq_Table_norm_count_all.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
@@ -181,7 +189,6 @@ ggplot(results_df, aes(x = log2FoldChange, y = neg_log10_pvalue)) +
 
   
 #Clustering and heatmap
-
 pheatmap(Data_Norm_DEG ,
          #kmeans_k = 4,
          clustering_distance_rows = "correlation",
@@ -228,7 +235,7 @@ ggplot(pc_df, aes(x = Dim.1, y = Dim.2, label = Sample)) +
 #load data for PCA using normalized data dss
 #df <- read.table("./results/DESeq_Table_norm_count_all.tsv", sep = "\t", header = T, row.names = 1, check.names=F)
 df <- as.data.frame(t(Data_Norm_all))
-
+str(df)
 
 # Assuming df.pca is the output of prcomp
 df.pca <- prcomp(df,scale = TRUE)
@@ -244,7 +251,7 @@ PC1 <- df.pca$x[,1]
 PC2 <- df.pca$x[,2]
 
 # Define custom colors for treatment + metadata
-treatment <- rep(c("stim","cont"),5)
+treatment <- rep(c("stim","cont"),4) #modify according to the number of samples 
 treatment_color <- c("cont" = "#619CFF", "stim" = "#F8766D")
 
 ggplot(df, 
@@ -254,7 +261,7 @@ ggplot(df,
            label = rownames(df))) +
   geom_point(size = 3, shape = 16) +
   geom_text(vjust = -2, size = 3, angle = -20) +
-  stat_ellipse(type = "t", level = 0.9, segments = 51, linetype = "dashed") +
+  stat_ellipse(type = "t", level = 0.9, segments = 20, linetype = "dashed") +
   labs(title = "PCA Analysis",
        x = paste0("PC1 (", variance_table$Percentage_Variance[1], ")"),
        y = paste0("PC2 (", variance_table$Percentage_Variance[2], ")")) +
@@ -270,6 +277,7 @@ ggplot(df,
 library(pathview)
 library(GO.db)
 library(enrichplot)
+library(clusterProfiler)
 
 
 # SET THE DESIRED ORGANISM HERE
