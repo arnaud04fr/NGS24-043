@@ -585,8 +585,14 @@ geneID_list <- lapply(geneID_list, function(x) as.numeric(x))
 cytokine <- geneID_list$hsa04060
 cytokine <- bitr(cytokine, fromType = "ENTREZID", toType = "SYMBOL", OrgDb="org.Hs.eg.db") #rajoute le gène symbol
 
+cancer <- geneID_list$hsa05200
+cancer <- bitr(cancer, fromType = "ENTREZID", toType = "SYMBOL", OrgDb="org.Hs.eg.db") #rajoute le gène symbol
+
+
 #filter DEG:
 Data_Norm_DEG_cytokine <- Data_Norm_DEG[row.names(Data_Norm_DEG) %in% cytokine$SYMBOL,]
+Data_Norm_DEG_cancer <- Data_Norm_DEG[row.names(Data_Norm_DEG) %in% cancer$SYMBOL,]
+
 
 #generate heatmap
 pheatmap(Data_Norm_DEG_cytokine ,
@@ -604,3 +610,17 @@ pheatmap(Data_Norm_DEG_cytokine ,
          show_colnames = FALSE  # Show column names
 )
 
+pheatmap(Data_Norm_DEG_cancer ,
+         #kmeans_k = 4,
+         annotation_col = my_sample_col,
+         clustering_distance_rows = "correlation",
+         cluster_rows = TRUE,  # Cluster rows
+         cluster_cols = TRUE,  # Cluster columns,
+         scale = "row",        # Scale rows (-> zscore)
+         cutree_rows = 2,
+         cutree_cols =2,
+         main = "hsa05200 - Pathways in Cancer",
+         fontsize = 8,         # Adjust the font size for row and column names
+         show_rownames = TRUE, # Show row names
+         show_colnames = FALSE  # Show column names
+)
