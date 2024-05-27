@@ -584,27 +584,11 @@ geneID_list <- lapply(geneID_list, function(x) as.numeric(x))
 #liste cytokine
 cytokine <- geneID_list$hsa04060
 cytokine <- bitr(cytokine, fromType = "ENTREZID", toType = "SYMBOL", OrgDb="org.Hs.eg.db") #rajoute le gène symbol
-#list PPARg
-PPARg <- geneID_list$hsa03320
-PPARg <- bitr(PPARg, fromType = "ENTREZID", toType = "SYMBOL", OrgDb="org.Hs.eg.db") #rajoute le gène symbol
 
 #filter DEG:
 Data_Norm_DEG_cytokine <- Data_Norm_DEG[row.names(Data_Norm_DEG) %in% cytokine$SYMBOL,]
-Data_Norm_DEG_PPARg <- Data_Norm_DEG[row.names(Data_Norm_DEG) %in% PPARg$SYMBOL,]
-colnames(Data_Norm_DEG_PPARg)
-nom <- c("MC-888", "ctrl-888","MC-889", "ctrl-889","MC-894", "ctrl-894","MC-897", "ctrl-897","MC-913", "ctrl-913")
-colnames(Data_Norm_DEG_PPARg) <- nom
-Data_Norm_DEG_PPARg <- sort.DataFrame(Data_Norm_DEG_PPARg)
-Data_Norm_DEG_PPARg <- Data_Norm_DEG_PPARg[, order(names(Data_Norm_DEG_PPARg))]
-my_sample_col2 <- as.data.frame(colnames(Data_Norm_DEG_PPARg))
-colnames(my_sample_col2) <- "Treatment"
-row.names(my_sample_col2) <- my_sample_col2$Treatment
-my_sample_col2[1:5,] <- "cont"
-my_sample_col2[6:10,] <- "stim"
 
 #generate heatmap
-
-
 pheatmap(Data_Norm_DEG_cytokine ,
          #kmeans_k = 4,
          annotation_col = my_sample_col,
@@ -619,22 +603,4 @@ pheatmap(Data_Norm_DEG_cytokine ,
          show_rownames = TRUE, # Show row names
          show_colnames = FALSE  # Show column names
 )
-
-pheatmap(Data_Norm_DEG_PPARg ,
-         #kmeans_k = 4,
-         annotation_col = my_sample_col2,
-         #clustering_distance_rows = "correlation",
-         #clustering_distance_cols = "canberra",
-         cluster_rows = TRUE,  # Cluster rows
-         cluster_cols = FALSE,  # Cluster columns,
-         scale = "row",        # Scale rows (-> zscore)
-         cutree_rows = 2,
-         cutree_cols =2,
-         main = "hsa03320 - PPAR signaling pathway",
-         fontsize = 8,         # Adjust the font size for row and column names
-         show_rownames = TRUE, # Show row names
-         show_colnames = TRUE  # Show column names
-)
-
-
 
