@@ -154,7 +154,10 @@ Data_Norm_DEG <- as.data.frame(Data_Norm_all[result_diff$gene_name, ])
 #write.table(Data_Norm_DEG,"./results/DESeq_Table_norm_count_DEG.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
 
 
+
 ###################" graph generation ###################################
+#Data_Norm_DEG <- read.table("./results/DESeq_Table_norm_count_DEG.tsv",sep='\t', header =T)
+#Data_Norm_all <- read.table("./results/DESeq_Table_norm_count_all.tsv",sep='\t', header =T)
 
 ## MA-plots ## 
 plotMA(results_table, ylim=c(-6,6), alpha = 0.05)
@@ -181,20 +184,32 @@ up_genes <- up_genes[!duplicated(up_genes$gene_name), ] #remove duplicated symbo
 down_genes <- subset(results, padj < 0.05 & log2FoldChange < -1)
 down_genes <- down_genes[!duplicated(up_genes$gene_name), ] #remove duplicated symbols
 
-#Combine the up-regulated and down-regulated genes
-significant_genes <- (rbind(up_genes, down_genes))
 
 # Add a new column to 'counts_mean' indicating the regulation status of each gene
 counts_mean$regulation <- ifelse(rownames(counts_mean) %in% up_genes$gene_name, "Up",
                                  ifelse(rownames(counts_mean) %in% down_genes$gene_name, "Down", "NS"))
 
+counts_mean$genes <- row.names(counts_mean)
+gene_list <- data.frame(
+  genes = results$gene_name,
+  log2FoldChange = results$log2FoldChange,
+  neg_log10_pvalue = -log10(results$pvalue),
+  padj = results$padj,
+  GSEA = score_GSEA
+)
+counts_mean <- inner_join(counts_mean,gene_list, by= "genes")
+counts_mean <- counts_mean[!duplicated(counts_mean$genes), ] #remove duplicated symbols
+row.names(counts_mean) <- counts_mean$genes
+ 
 #Create the scatter plot
 ggplot(counts_mean, aes(x = cont, y = stim, color = regulation)) +
   geom_point() +
   scale_color_manual(values = c("blue", "black", "red")) + # Set the colors for up, down, and not changed genes
   xlab("Log10 Normalized Counts (Control)") +
   ylab("Log10 Normalized Counts (Stim)") +
-  ggtitle("Scatter plot of Control vs Treated conditions")
+  ggtitle("Scatter plot of Control vs Treated conditions") +
+  geom_text(aes(label = ifelse(GSEA > 550 | GSEA < -225, genes, "")), 
+          vjust = -0.9, hjust = 0.5, size = 2, angle = 20) 
 
 
 ## Volcano plot generation ##
@@ -226,13 +241,27 @@ ggplot(results_df, aes(x = log2FoldChange, y = neg_log10_pvalue)) +
             vjust = -0.9, hjust = 0.5, size = 2, angle = 20)
 
   
-#Clustering and heatmap
+#######Clustering and heatmap##########
+
+
+#annotations des colonnes pour graph par traitement
+my_sample_col <- data.frame(coldata$treatment)
+row.names(my_sample_col) <- colnames(Data_Norm_DEG)
+colnames(my_sample_col) <- "Treatment"
+
+# Specify colors for annotations
+my_colour = list(
+  Treatment = c("cont" = "#5977ff", "stim" = "#f74747"))
+
 pheatmap(Data_Norm_DEG ,
          #kmeans_k = 4,
+         annotation_col = my_sample_col,
          clustering_distance_rows = "correlation",
          cluster_rows = TRUE,  # Cluster rows
          cluster_cols = TRUE,  # Cluster columns,
-         scale = "row",        # Scale rows (you can change this if needed)
+         scale = "row",        # Scale rows (-> zscore)
+         cutree_rows = 2,
+         cutree_cols =2,
          main = "Heatmap of Differentially Expressed Genes",
          fontsize = 8,         # Adjust the font size for row and column names
          show_rownames = FALSE, # Show row names
@@ -243,7 +272,6 @@ pheatmap(Data_Norm_DEG ,
 
 # Step 1: Prepare ans transpose the data 
 data_for_pca2 <- t(Data_Norm) #transpose le tableau de données
-#row.names(data_for_pca2) <- c("ASF859_D0","ASF859_D14","ASF876_D0","ASF876_D14","ASF879-2_D0","ASF879-2_D14","ASF880_D0","ASF880_D14")
 
 
 # Step 2: Perform PCA
@@ -289,7 +317,8 @@ PC1 <- df.pca$x[,1]
 PC2 <- df.pca$x[,2]
 
 # Define custom colors for treatment + metadata
-treatment <- rep(c("stim","cont"),4) #modify according to the number of samples 
+treatment <- NULL
+treatment <- rep(c("stim","cont"),5) #modify according to the number of samples 
 treatment_color <- c("cont" = "#619CFF", "stim" = "#F8766D")
 
 ggplot(df, 
@@ -316,6 +345,7 @@ library(pathview)
 library(GO.db)
 library(enrichplot)
 library(clusterProfiler)
+library(biomaRt)
 
 
 # SET THE DESIRED ORGANISM HERE
@@ -490,7 +520,7 @@ kegg_genes <- na.omit(kegg_genes)
 head(kegg_genes)
 
 # filter on log2fold change (PARAMETER)
-kegg_genes <- (kegg_genes)[abs(kegg_genes) > 2]
+kegg_genes <- (kegg_genes)[abs(kegg_genes) > 1]
 head(kegg_genes)
 
 ##### Create enrichKEGG object
