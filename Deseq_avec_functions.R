@@ -5,6 +5,7 @@ library(FactoMineR)
 library(pheatmap)
 
 
+
 ######### functions ###################
 
 get_geneID <- function(results) {
@@ -494,18 +495,18 @@ dedup_ids = ids[!duplicated(ids[c("ENSEMBL")]),]
 # Create a new dataframe df2 which has only the genes which were successfully mapped using the bitr function above
 df2 <- inner_join(df, dedup_ids, by = c("ensembl_gene_id" = "ENSEMBL"))
 
-# Create a vector of the gene unuiverse
+# Create a vector of the gene universe
 kegg_gene_list <- df2$log2FoldChange
 
 # Name vector with ENTREZ ids
 names(kegg_gene_list) <- df2$ENTREZID
-
+head(kegg_gene_list)
 # omit any NA values 
 kegg_gene_list<-na.omit(kegg_gene_list)
 
 # sort the list in decreasing order (required for clusterProfiler)
 kegg_gene_list = sort(kegg_gene_list, decreasing = TRUE)
-
+head(kegg_gene_list)
 # Exctract significant results from df2
 kegg_sig_genes_df = subset(df2, padj < 0.05)
 
@@ -520,7 +521,7 @@ kegg_genes <- na.omit(kegg_genes)
 head(kegg_genes)
 
 # filter on log2fold change (PARAMETER)
-kegg_genes <- (kegg_genes)[abs(kegg_genes) > 1]
+kegg_genes <- (kegg_genes)[abs(kegg_genes) > 2]
 head(kegg_genes)
 
 ##### Create enrichKEGG object
@@ -624,3 +625,42 @@ pheatmap(Data_Norm_DEG_cancer ,
          show_rownames = TRUE, # Show row names
          show_colnames = FALSE  # Show column names
 )
+
+#list PPARg
+PPARg <- geneID_list$hsa03320
+PPARg <- bitr(PPARg, fromType = "ENTREZID", toType = "SYMBOL", OrgDb="org.Hs.eg.db") #rajoute le gène symbol
+
+#filter DEG:
+Data_Norm_DEG_PPARg <- Data_Norm_DEG[row.names(Data_Norm_DEG) %in% PPARg$SYMBOL,]
+colnames(Data_Norm_DEG_PPARg)
+nom <- c("MC-888", "ctrl-888","MC-889", "ctrl-889","MC-894", "ctrl-894","MC-897", "ctrl-897","MC-913", "ctrl-913")
+colnames(Data_Norm_DEG_PPARg) <- nom
+Data_Norm_DEG_PPARg <- sort.DataFrame(Data_Norm_DEG_PPARg)
+Data_Norm_DEG_PPARg <- Data_Norm_DEG_PPARg[, order(names(Data_Norm_DEG_PPARg))]
+my_sample_col2 <- as.data.frame(colnames(Data_Norm_DEG_PPARg))
+colnames(my_sample_col2) <- "Treatment"
+row.names(my_sample_col2) <- my_sample_col2$Treatment
+my_sample_col2[1:5,] <- "cont"
+my_sample_col2[6:10,] <- "stim"
+
+#generate heatmap
+
+pheatmap(Data_Norm_DEG_PPARg ,
+         #kmeans_k = 4,
+         annotation_col = my_sample_col2,
+         clustering_distance_rows = "correlation",
+         clustering_distance_cols = "maximum",
+         cluster_rows = TRUE,  # Cluster rows
+         cluster_cols = TRUE,  # Cluster columns,
+         scale = "row",        # Scale rows (-> zscore)
+         cutree_rows = 2,
+         cutree_cols =2,
+         main = "hsa03320 - PPAR signaling pathway",
+         fontsize = 8,         # Adjust the font size for row and column names
+         show_rownames = TRUE, # Show row names
+         show_colnames = TRUE  # Show column names
+)
+
+
+sessionInfo()
+writeLines(capture.output(sessionInfo()), "sessionInfo.txt")
