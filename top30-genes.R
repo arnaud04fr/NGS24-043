@@ -21,7 +21,7 @@ for (i in 1:length(group)) {
   Top30 <- Top30 %>% relocate(gene_name, .before = 1)
   Top30 <- Top30 %>% relocate(mean_count, .before = 2)
   Top30 <- Top30[,1:2]
-  Top30$gene_name <- factor(Top30$gene_name, levels = Top30$gene_name)
+  Top30$gene_name <- factor(Top30$gene_name, levels = Top30$gene_name) #to freeze the row orders for ggplot
   assign(paste("Top30_", sep ="", mot), Top30$gene_name)
   
   
