@@ -3,51 +3,17 @@ library(DESeq2)
 library(tidyverse)
 library(FactoMineR)
 library(pheatmap)
+library(umap)
 
+dev.off() # To clear any existing plots in RStudio
+set.seed(42)
 
+# Import functions
+source("DeseqFunctions.R")
 
-######### functions ###################
-
-get_geneID <- function(results) {
-  # load biomart
-  library(biomaRt)
-
-  #create empty vectors 
-  geneID <- NULL
-  list_names <- NULL
-  
-  # Creation of the list of referencegene names
-  list_names <- row.names(results)
-  
-  # Define the Ensembl database and create a biomart object
-  ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
-  
-  # Specify the attributes to retrieve
-  attributes <- c("ensembl_gene_id", "ensembl_gene_id_version", "external_gene_name")
-  
-  # Retrieve information from Biomart
-  geneID <- getBM(attributes = attributes, filters = "ensembl_gene_id_version", values = list_names, mart = ensembl)
-  
-  # Get the number of genes
-  n <- nrow(geneID)
-  
-  # Replace empty cells with the stable ID
-  for (i in 1:n) {
-    if (geneID[i, 3] == "") {
-      geneID[i, 3] <- geneID[i, 1]
-    }
-  }
-  #change the name of the columns to ease table union
-  colnames(geneID)[2] <- "gene"
-  colnames(geneID)[3] <- "gene_name"
-  
-  return(geneID)
-}
-
-########### DESeq2 analysis #########
 
 #chargement de la table de comptage (dans wd)
-countdata <- read.table("count_NHLF_CM.txt", sep = "\t", header = T, row.names = 1, check.names=F)
+countdata <- read.table("count_NHLFCM0621.txt", sep = "\t", header = T, row.names = 1, check.names=F)
 
 #remove CM from ASF894 -> to test.
 #colnames(countdata) #ASF398 -> columns 5 and 6
@@ -74,6 +40,28 @@ dds$treatment <- relevel(dds$treatment, "cont") # added 03/21 -> define clearly 
 # Run the DESeq analysis and obtain the results table
 dds <- DESeq(dds)
 results_table <- results(dds)
+
+########################################
+####          Quality Check         ####
+########################################
+
+#performing QC - scatterplot matrix
+group <- c("ctrl", "MC") #indicate sample groups to analyze.
+for (i in 1:length(group)) {
+  mot <- group[i]
+  dds_subset <- dds[, colnames(dds) %in% grep(mot, colnames(dds), value = TRUE)]
+# Generate a pairs plot using the base R pairs function
+  Graph_Matrice(dds_subset,mot)  
+#end for()  
+}
+
+#blox plot of count before / after normalization
+Graph_norm(dds)
+
+
+########################################
+########## analysis of DEG #############
+########################################
 
 # Extract the results for all genes
 log2FoldChange <- results_table$log2FoldChange
@@ -145,7 +133,7 @@ Data_Norm_all$gene <- row.names(Data_Norm_all)
 Data_Norm_all <- inner_join(Data_Norm_all,geneID, by = "gene")
 Data_Norm_all <- Data_Norm_all[!duplicated(Data_Norm_all$gene_name), ] #remove duplicated symbols
 row.names(Data_Norm_all) <- Data_Norm_all$gene_name
-Data_Norm_all <- Data_Norm_all[,1:10] # remove the ensembl_gene_id -> check the number of columns before
+Data_Norm_all <- Data_Norm_all[,1:(ncol(Data_Norm_all)-3)] # remove the last 3 columns
 colnames(Data_Norm_all) <- sub("_.*", "", colnames(Data_Norm_all))
 head(Data_Norm_all)
 #write.table(Data_Norm_all,"./results/DESeq_Table_norm_count_all.tsv",sep='\t', row.names = T, col.names=T) #sauvegarde table comptages normalisées
@@ -165,53 +153,10 @@ plotMA(results_table, ylim=c(-6,6), alpha = 0.05)
 
 
 ## Scatter plot ##
-
 norm_counts <- Data_Norm_all
 colnames(norm_counts) <- c("MC1","CT1","MC2",'CT2',"MC3",'CT3',"MC4",'CT4',"MC5",'CT5')
 norm_counts <- as.data.frame(norm_counts[,order(colnames(norm_counts))])
-
-n <- length(rownames(norm_counts))
-counts_mean <- as.data.frame(matrix(0 ,nrow = n, ncol = 2 ))
-colnames(counts_mean) <- c("cont", "stim")
-row.names(counts_mean) <- row.names(norm_counts)
-
-for (i in 1:n) {
-  counts_mean[i,1] <- log10(mean(as.numeric(norm_counts[i,1:5])) +1)
-  counts_mean[i,2] <- log10(mean(as.numeric(norm_counts[i,6:10])) +1)
-}
-
-up_genes <- subset(results, padj < 0.05 & log2FoldChange > 1)
-up_genes <- up_genes[!duplicated(up_genes$gene_name), ] #remove duplicated symbols
-down_genes <- subset(results, padj < 0.05 & log2FoldChange < -1)
-down_genes <- down_genes[!duplicated(up_genes$gene_name), ] #remove duplicated symbols
-
-
-# Add a new column to 'counts_mean' indicating the regulation status of each gene
-counts_mean$regulation <- ifelse(rownames(counts_mean) %in% up_genes$gene_name, "Up",
-                                 ifelse(rownames(counts_mean) %in% down_genes$gene_name, "Down", "NS"))
-
-counts_mean$genes <- row.names(counts_mean)
-gene_list <- data.frame(
-  genes = results$gene_name,
-  log2FoldChange = results$log2FoldChange,
-  neg_log10_pvalue = -log10(results$pvalue),
-  padj = results$padj,
-  GSEA = score_GSEA
-)
-counts_mean <- inner_join(counts_mean,gene_list, by= "genes")
-counts_mean <- counts_mean[!duplicated(counts_mean$genes), ] #remove duplicated symbols
-row.names(counts_mean) <- counts_mean$genes
- 
-#Create the scatter plot
-ggplot(counts_mean, aes(x = cont, y = stim, color = regulation)) +
-  geom_point() +
-  scale_color_manual(values = c("blue", "black", "red")) + # Set the colors for up, down, and not changed genes
-  xlab("Log10 Normalized Counts (Control)") +
-  ylab("Log10 Normalized Counts (Stim)") +
-  ggtitle("Scatter plot of Control vs Treated conditions") +
-  geom_text(aes(label = ifelse(GSEA > 550 | GSEA < -225, genes, "")), 
-          vjust = -0.9, hjust = 0.5, size = 2, angle = 20) 
-
+Graph_scatter(norm_counts)
 
 ## Volcano plot generation ##
 
@@ -338,6 +283,34 @@ ggplot(df,
   theme_minimal() +
   scale_color_manual(values = treatment_color)
 
+
+
+############## UMAP ###############
+
+
+
+# Assuming Data_Norm_all is prepared and contains normalized or transformed expression data
+# Extract the relevant data for UMAP
+umap_data <- t(Data_Norm_all)  # Transpose if needed
+
+# Perform UMAP
+umap_result <- umap(umap_data, n_neighbors = 5, min_dist = 0.1, n_components = 2)
+
+
+# Convert UMAP results to a data frame for easier manipulation
+umap_df <- as.data.frame(umap_result$layout)
+colnames(umap_df) <- c("UMAP1", "UMAP2")
+rownames(umap_df) <- rownames(umap_data)  # Assuming row names are sample IDs or similar
+
+# Add treatment information if available
+umap_df$Treatment <- coldata$treatment  # Adjust this according to your metadata
+
+# Plot UMAP
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = Treatment)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("#619CFF", "#F8766D")) +  # Adjust colors as per your treatment groups
+  labs(title = "UMAP Plot of Samples", x = "UMAP1", y = "UMAP2") +
+  theme_minimal()
 
 
 ######################## Pathway analysis ##################
